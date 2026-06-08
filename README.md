@@ -1,4 +1,4 @@
-# Protocol Timer PWA v3
+# Protocol Timer PWA v4
 
 スマホ/iPad向けのPWA版です。App Storeを使わず、Safari/Chromeからホーム画面に追加して使うことを想定しています。
 
@@ -80,3 +80,10 @@ GitHub Pages / Netlify / Vercel など、HTTPSで配信できる場所に置い�
 - CSS import 用に `src/vite-env.d.ts` を追加
 - `lib` を `ES2021` に変更して `replaceAll` に対応
 - GitHub Pages公開時に型チェックで止まりにくいよう `strict` を無効化
+
+
+## v4 修正点
+
+- GitHub Pagesのサブパス配信で真っ白になる問題を修正
+- `vite.config.ts` を追加し、`base: "./"` に設定
+- manifest / icon / service worker のパスを相対パスに変更
