@@ -77,6 +77,14 @@ Known limitations include:
 * Data stored in one browser may not automatically appear in another browser or device.
 * Exported files must be managed carefully by the user.
 
+## Development status
+
+This project is experimental and has not been fully tested or validated.
+
+The app was created primarily as a prototype for personal and experimental workflow support. Timer behavior, alarms, notifications, data export, and PWA behavior may vary depending on the device, browser, operating system, sleep settings, notification permissions, and power-saving settings.
+
+Do not rely on this app as the sole timing or logging system for important experiments. Before using it in any real workflow, test it thoroughly with non-critical procedures and use a backup timer or independent record-keeping method.
+
 ## Safety notice
 
 The authors and maintainers do not guarantee that the timer, alarm, notification, or logging functions will work correctly in all environments.
