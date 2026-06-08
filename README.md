@@ -134,11 +134,13 @@ AI-generated or AI-assisted code may contain bugs, security issues, or unexpecte
 
 ## License
 
-No license has been selected yet.
+License
 
-If you want others to freely use, modify, and redistribute this project, consider adding an open-source license such as the MIT License.
+This project is licensed under the MIT License.
 
-If no license is provided, others generally do not have explicit permission to reuse or redistribute the code beyond what GitHub's terms allow for viewing and forking.
+See the LICENSE file for details.
+
+This project uses open-source libraries such as React, Vite, TypeScript, and related npm packages. Their respective copyrights and licenses remain with their original authors and projects.
 
 ## Disclaimer
 
