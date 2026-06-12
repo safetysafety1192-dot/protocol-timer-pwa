@@ -74,6 +74,15 @@ type AudioOutputDevice = {
 
 type AlarmType = "beep" | "chime" | "urgent" | "soft";
 
+type ActiveAlarmPlayback = {
+  token: number;
+  audio: HTMLAudioElement;
+  destination: MediaStreamAudioDestinationNode;
+  oscillators: OscillatorNode[];
+  gains: GainNode[];
+  cleanupTimeoutId: number;
+};
+
 type ExperimentRun = {
   id: string;
   name: string;
@@ -498,6 +507,8 @@ function App() {
   const alarmAudioRef = useRef<HTMLAudioElement | null>(null);
   const alarmIntervalRef = useRef<number | null>(null);
   const currentAlarmSourceRef = useRef<MediaStreamAudioDestinationNode | null>(null);
+  const alarmPlaybackTokenRef = useRef(0);
+  const activeAlarmPlaybacksRef = useRef<ActiveAlarmPlayback[]>([]);
   const suppressedAlarmStepIdsRef = useRef<Set<string>>(new Set());
 
   useEffect(() => {
@@ -661,11 +672,66 @@ function App() {
     ];
   }
 
-  function playAlarmSoundOnce() {
+  function cleanupAlarmPlayback(playback: ActiveAlarmPlayback) {
+    window.clearTimeout(playback.cleanupTimeoutId);
+
+    try {
+      playback.audio.pause();
+      playback.audio.srcObject = null;
+    } catch {
+      // Ignore cleanup failures.
+    }
+
+    for (const oscillator of playback.oscillators) {
+      try {
+        oscillator.stop();
+      } catch {
+        // The oscillator may already be stopped.
+      }
+      try {
+        oscillator.disconnect();
+      } catch {
+        // Ignore disconnect failures.
+      }
+    }
+
+    for (const gain of playback.gains) {
+      try {
+        gain.disconnect();
+      } catch {
+        // Ignore disconnect failures.
+      }
+    }
+
+    try {
+      playback.destination.stream.getTracks().forEach((track) => track.stop());
+    } catch {
+      // Ignore stream cleanup failures.
+    }
+
+    try {
+      playback.destination.disconnect();
+    } catch {
+      // Ignore disconnect failures.
+    }
+
+    activeAlarmPlaybacksRef.current = activeAlarmPlaybacksRef.current.filter((item) => item !== playback);
+
+    if (alarmAudioRef.current === playback.audio) {
+      alarmAudioRef.current = null;
+    }
+
+    if (currentAlarmSourceRef.current === playback.destination) {
+      currentAlarmSourceRef.current = null;
+    }
+  }
+
+  function playAlarmSoundOnce(token: number) {
     try {
       initAudio();
       const ctx = audioContextRef.current;
       if (!ctx) return;
+      if (token !== alarmPlaybackTokenRef.current) return;
 
       const destination = ctx.createMediaStreamDestination();
       currentAlarmSourceRef.current = destination;
@@ -673,10 +739,15 @@ function App() {
       const pattern = getAlarmPattern(alarmType);
       const startAt = ctx.currentTime + 0.03;
       const totalDuration = Math.max(...pattern.map((p) => p.start + p.duration)) + 0.2;
+      const oscillators: OscillatorNode[] = [];
+      const gains: GainNode[] = [];
 
       for (const tone of pattern) {
         const oscillator = ctx.createOscillator();
         const gain = ctx.createGain();
+
+        oscillators.push(oscillator);
+        gains.push(gain);
 
         const targetVolume = Math.max(0.0001, Math.min(3, tone.volume * alarmVolume));
 
@@ -697,18 +768,32 @@ function App() {
       audio.srcObject = destination.stream;
       audio.volume = 1;
 
+      const playback: ActiveAlarmPlayback = {
+        token,
+        audio,
+        destination,
+        oscillators,
+        gains,
+        cleanupTimeoutId: 0,
+      };
+
       const audioWithSink = audio as HTMLAudioElement & {
         setSinkId?: (sinkId: string) => Promise<void>;
       };
 
       const play = () => {
-        void audio.play();
-        window.setTimeout(() => {
-          audio.pause();
-          audio.srcObject = null;
-          if (currentAlarmSourceRef.current === destination) {
-            currentAlarmSourceRef.current = null;
-          }
+        if (token !== alarmPlaybackTokenRef.current) {
+          cleanupAlarmPlayback(playback);
+          return;
+        }
+
+        activeAlarmPlaybacksRef.current.push(playback);
+        void audio.play().catch(() => {
+          cleanupAlarmPlayback(playback);
+        });
+
+        playback.cleanupTimeoutId = window.setTimeout(() => {
+          cleanupAlarmPlayback(playback);
         }, totalDuration * 1000 + 250);
       };
 
@@ -726,14 +811,26 @@ function App() {
   }
 
   function stopAlarmSound() {
+    alarmPlaybackTokenRef.current += 1;
+
     if (alarmIntervalRef.current !== null) {
       window.clearInterval(alarmIntervalRef.current);
       alarmIntervalRef.current = null;
     }
 
+    for (const playback of [...activeAlarmPlaybacksRef.current]) {
+      cleanupAlarmPlayback(playback);
+    }
+
+    activeAlarmPlaybacksRef.current = [];
+
     if (alarmAudioRef.current) {
-      alarmAudioRef.current.pause();
-      alarmAudioRef.current.srcObject = null;
+      try {
+        alarmAudioRef.current.pause();
+        alarmAudioRef.current.srcObject = null;
+      } catch {
+        // Ignore cleanup failures.
+      }
       alarmAudioRef.current = null;
     }
 
@@ -744,11 +841,14 @@ function App() {
 
   function startAlarmSound() {
     stopAlarmSound();
+    const token = alarmPlaybackTokenRef.current + 1;
+    alarmPlaybackTokenRef.current = token;
+
     setIsAlarmRinging(true);
-    playAlarmSoundOnce();
+    playAlarmSoundOnce(token);
 
     alarmIntervalRef.current = window.setInterval(() => {
-      playAlarmSoundOnce();
+      playAlarmSoundOnce(token);
     }, alarmType === "urgent" ? 1800 : 2400);
   }
 
