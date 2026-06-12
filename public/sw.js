@@ -1,16 +1,17 @@
-const CACHE_NAME = "protocol-timer-pwa-v1";
+const CACHE_NAME = "protocol-timer-pwa-v3";
 const APP_SHELL = [
-  "./",
-  "./index.html",
-  "./manifest.webmanifest",
-  "./icons/icon-192.png",
-  "./icons/icon-512.png",
-  "./icons/maskable-512.png"
+  "/index.html",
+  "/manifest.webmanifest",
+  "/icons/icon-192.png",
+  "/icons/icon-512.png",
+  "/icons/maskable-512.png"
 ];
 
 self.addEventListener("install", (event) => {
   event.waitUntil(
-    caches.open(CACHE_NAME).then((cache) => cache.addAll(APP_SHELL)).then(() => self.skipWaiting())
+    caches.open(CACHE_NAME)
+      .then((cache) => cache.addAll(APP_SHELL))
+      .then(() => self.skipWaiting())
   );
 });
 
@@ -23,19 +24,35 @@ self.addEventListener("activate", (event) => {
 });
 
 self.addEventListener("fetch", (event) => {
-  if (event.request.method !== "GET") return;
+  const request = event.request;
+  if (request.method !== "GET") return;
 
-  event.respondWith(
-    caches.match(event.request).then((cached) => {
-      if (cached) return cached;
+  const url = new URL(request.url);
+  const isNavigation = request.mode === "navigate" || url.pathname === "/" || url.pathname.endsWith("/index.html");
 
-      return fetch(event.request)
+  if (isNavigation) {
+    event.respondWith(
+      fetch(request)
         .then((response) => {
           const copy = response.clone();
-          caches.open(CACHE_NAME).then((cache) => cache.put(event.request, copy));
+          caches.open(CACHE_NAME).then((cache) => cache.put("/index.html", copy));
           return response;
         })
-        .catch(() => caches.match("./index.html"));
-    })
-  );
+        .catch(() => caches.match("/index.html"))
+    );
+    return;
+  }
+
+  if (url.origin === self.location.origin) {
+    event.respondWith(
+      caches.match(request).then((cached) => {
+        if (cached) return cached;
+        return fetch(request).then((response) => {
+          const copy = response.clone();
+          caches.open(CACHE_NAME).then((cache) => cache.put(request, copy));
+          return response;
+        });
+      })
+    );
+  }
 });
