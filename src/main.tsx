@@ -5,7 +5,7 @@ import "./styles.css";
 
 if ("serviceWorker" in navigator) {
   window.addEventListener("load", () => {
-    navigator.serviceWorker.register("./sw.js").catch(() => {
+    navigator.serviceWorker.register("/sw.js").catch(() => {
       // Service worker registration is best-effort.
     });
   });
@@ -498,6 +498,7 @@ function App() {
   const alarmAudioRef = useRef<HTMLAudioElement | null>(null);
   const alarmIntervalRef = useRef<number | null>(null);
   const currentAlarmSourceRef = useRef<MediaStreamAudioDestinationNode | null>(null);
+  const suppressedAlarmStepIdsRef = useRef<Set<string>>(new Set());
 
   useEffect(() => {
     if (!selectedPresetId && presets[0]) setSelectedPresetId(presets[0].id);
@@ -530,6 +531,7 @@ function App() {
     for (const run of runs) {
       for (const step of run.steps) {
         if (step.status !== "running") continue;
+        if (suppressedAlarmStepIdsRef.current.has(step.id)) continue;
         if (alarmedStepIds.includes(step.id)) continue;
 
         const remaining = getTargetDurationSec(step) - getElapsedSec(step, tick);
@@ -881,6 +883,23 @@ function App() {
     updateRun(runId, (r) => ({ ...r, name }));
   }
 
+  function suppressAlarmForStep(stepId: string) {
+    suppressedAlarmStepIdsRef.current.add(stepId);
+    setAlarmedStepIds((prev) => (prev.includes(stepId) ? prev : [...prev, stepId]));
+  }
+
+  function allowAlarmForStep(stepId: string) {
+    suppressedAlarmStepIdsRef.current.delete(stepId);
+    setAlarmedStepIds((prev) => prev.filter((id) => id !== stepId));
+    setWarnedStepIds((prev) => prev.filter((id) => id !== stepId));
+  }
+
+  function suppressAlarmForSteps(stepIds: string[]) {
+    for (const stepId of stepIds) suppressedAlarmStepIdsRef.current.add(stepId);
+    setAlarmedStepIds((prev) => Array.from(new Set([...prev, ...stepIds])));
+    setWarnedStepIds((prev) => prev.filter((id) => !stepIds.includes(id)));
+  }
+
   function resetExperiment(runId: string) {
     const run = runs.find((r) => r.id === runId);
     if (!run) return;
@@ -888,8 +907,7 @@ function App() {
     if (!confirm(`「${run.name}」の全ステップを未開始に戻しますか？イベントログにはリセット操作が残ります。`)) return;
 
     const stepIds = run.steps.map((step) => step.id);
-    setAlarmedStepIds((prev) => prev.filter((id) => !stepIds.includes(id)));
-    setWarnedStepIds((prev) => prev.filter((id) => !stepIds.includes(id)));
+    suppressAlarmForSteps(stepIds);
     stopAlarmSound();
 
     updateRun(runId, (r) => {
@@ -904,8 +922,7 @@ function App() {
 
   function startStep(runId: string, stepId: string) {
     initAudio();
-    setAlarmedStepIds((prev) => prev.filter((id) => id !== stepId));
-    setWarnedStepIds((prev) => prev.filter((id) => id !== stepId));
+    allowAlarmForStep(stepId);
     updateRun(runId, (run) => {
       const ts = nowIso();
       let updated: ExperimentRun = {
@@ -969,6 +986,9 @@ function App() {
   }
 
   function finishStep(runId: string, stepId: string) {
+    suppressAlarmForStep(stepId);
+    stopAlarmSound();
+
     updateRun(runId, (run) => {
       const ts = nowIso();
       let stepName = "";
@@ -999,6 +1019,9 @@ function App() {
     const reason = prompt("この手順をスキップする理由を入力してください。", "");
     if (reason === null) return;
 
+    suppressAlarmForStep(stepId);
+    stopAlarmSound();
+
     updateRun(runId, (run) => {
       const ts = nowIso();
       let stepName = "";
@@ -1026,6 +1049,9 @@ function App() {
 
     const reason = prompt("このステップをリセットする理由を入力してください。", "誤って開始したため");
     if (reason === null) return;
+
+    suppressAlarmForStep(stepId);
+    stopAlarmSound();
 
     updateRun(runId, (r) => {
       const ts = nowIso();
